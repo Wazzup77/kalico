@@ -61,4 +61,4 @@ TREATS = [
 
 
 def generate_name():
-    return random.choice(COLORS) + random.choice(TREATS)
+    return f"{random.choice(COLORS)} {random.choice(TREATS)}"
