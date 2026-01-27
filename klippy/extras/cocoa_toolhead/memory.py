@@ -172,12 +172,16 @@ class CocoaMemory:
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
 
-        self.memory = Memory(config)
-        self.backup_address = self.memory.capacity // 2
-
         self.connected = False
         self.header = self._last_header = None
         self.config = self._last_config = None
+
+        memory_name = config.get("memory", None)
+        if memory_name is None:
+            return
+
+        self.memory = self.printer.load_object(config, memory_name)
+        self.backup_address = self.memory.capacity // 2
 
         self.printer.register_event_handler(
             f"cocoa_toolhead:{self.name}:attached", self._on_attach
@@ -223,8 +227,9 @@ class CocoaMemory:
                     )
 
                 else:
-                    offset = 256 * (self.header.data_page + 1)
-                    data = self.memory.read(offset, self.header.data_length)
+                    data = self.memory.read(
+                        self.header.get_data_address(), self.header.data_length
+                    )
                     self._last_config = msgpack.loads(data)
 
                 self.config = copy.deepcopy(self._last_config)

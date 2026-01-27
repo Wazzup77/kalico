@@ -114,9 +114,13 @@ class CocoaRunout:
 
     def _enable_runout(self):
         if self.position_top is None:
-            raise self.gcode.error(
+            # raise self.gcode.error(
+            #     f"cocoa_toolhead[{self.name}]: cannot enable runout without homing the toolhead"
+            # )
+            self.gcode.respond_info(
                 f"cocoa_toolhead[{self.name}]: cannot enable runout without homing the toolhead"
             )
+            return
 
         self.runout_enabled = True
         self.logger.info(f"cocoa_toolhead[{self.name}]: runout enabled")
