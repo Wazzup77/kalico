@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from .homing import CocoaHoming
 from .load_wizard import CocoaLoadWizard
 from .memory import CocoaMemory
+from .nozzle_offsets import CocoaNozzleOffsets
 from .preheater import CocoaPreheater
 from .runout import CocoaRunout
 
@@ -22,9 +23,8 @@ if TYPE_CHECKING:
     from ...printer import Printer
     from ..adc_temperature import PrinterADCtoTemperature
     from ..gcode_macro import PrinterGCodeMacro
-    from ..gcode_move import GCodeMove
     from ..heaters import Heater
-    from ..save_variables import SaveVariables
+
 
 # Open circuits on the ADC cause a near 1.0 reading, typically above 0.998
 OPEN_ADC_VALUE = 0.99
@@ -68,15 +68,13 @@ class CocoaToolheadControl:
         self.runout = CocoaRunout(self, config)
         self.memory = CocoaMemory(self, config)
         self.preheater = CocoaPreheater(self, config)
+        self.nozzle_offsets = CocoaNozzleOffsets(self, config)
 
         self.attached = None
         self.last_readings = {}
         self.calibration_required = False
 
         self.printer.register_event_handler("klippy:connect", self._on_connect)
-        self.printer.register_event_handler(
-            f"cocoa_memory:{self.name}:ready", self._memory_ready
-        )
         self.printer.register_event_handler(
             f"cocoa_preheater:{self.name}:start", self._preheater_started
         )
@@ -87,10 +85,6 @@ class CocoaToolheadControl:
             f"cocoa_preheater:{self.name}:stop", self._preheater_stopped
         )
         self.gcode: GCodeDispatch = self.printer.lookup_object("gcode")
-        self.gcode_move: GCodeMove = self.printer.lookup_object("gcode_move")
-        self.save_variables: SaveVariables = self.printer.load_object(
-            config, "save_variables"
-        )
 
         # register commands
         self.gcode.register_mux_command(
@@ -98,12 +92,6 @@ class CocoaToolheadControl:
             "TOOL",
             self.mux_name,
             self.cmd_SET_COCOA_TOOLHEAD,
-        )
-        self.gcode.register_mux_command(
-            "SET_NOZZLE_OFFSET",
-            "TOOL",
-            self.mux_name,
-            self.cmd_SET_NOZZLE_OFFSET,
         )
 
         gcode_macro: PrinterGCodeMacro = self.printer.load_object(
@@ -129,12 +117,6 @@ class CocoaToolheadControl:
 
         self.inject_temp_callback("extruder", extruder.heater)
         self.inject_temp_callback("body", body_heater)
-
-    def _memory_ready(self, connected: bool, config: dict):
-        uid = self.memory.header.uid if connected else "generic"
-        key = f"z_offset_{uid}"
-        z_offset = self.save_variables.allVariables.get(key, "0")
-        self.gcode.run_script_from_command(f"SET_GCODE_OFFSET Z={z_offset}")
 
     def _preheater_started(self, profile):
         if not (self.memory.connected):
@@ -215,17 +197,13 @@ class CocoaToolheadControl:
 
     def get_status(self, eventtime):
         return {
-            **self.load_wizard.get_state(eventtime),
+            **self.load_wizard.get_status(eventtime),
             "attached": self.attached,
             "adc": self.last_readings,
             "calibration_required": self.calibration_required,
             "runout": self.runout.get_status(eventtime),
             "memory": self.memory.get_status(eventtime),
-            "z_offset": {
-                k.removeprefix("z_offset_"): v
-                for k, v in self.save_variables.allVariables.items()
-                if k.startswith("z_offset_")
-            },
+            "offsets": self.nozzle_offsets.get_status(eventtime),
         }
 
     # For updating user values (name of the toolhead)
@@ -244,12 +222,3 @@ class CocoaToolheadControl:
         if new_name is not None:
             self.memory.set("name", new_name)
             gcmd.respond_info(f"{self.name}: Set name to {new_name}")
-
-    def cmd_SET_NOZZLE_OFFSET(self, cmd: GCodeCommand):
-        uid = cmd.get("UID", "generic")
-        offset = cmd.get_float("OFFSET", self.gcode_move.homing_position[2])
-
-        if uid == "current":
-            uid = self.memory.header.uid
-
-        self.save_variables.save(f"z_offset_{uid}", round(offset, 4))

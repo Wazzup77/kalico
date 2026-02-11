@@ -251,7 +251,7 @@ class CocoaLoadWizard:
         new_pos = (last_pos[0], last_pos[1], last_pos[2], last_pos[3] + amount)
         toolhead.manual_move(new_pos, speed)
 
-    def get_state(self, eventtime):
+    def get_status(self, eventtime):
         return {
             "load_state": self.state.name,
             "load_unload_message": self.load_unload_message,
