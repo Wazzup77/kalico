@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     from ...printer import Printer
     from ..adc_temperature import PrinterADCtoTemperature
     from ..gcode_macro import PrinterGCodeMacro
+    from ..gcode_move import GCodeMove
     from ..heaters import Heater
-    from ..probe import PrinterProbe
     from ..save_variables import SaveVariables
 
 # Open circuits on the ADC cause a near 1.0 reading, typically above 0.998
@@ -75,9 +75,6 @@ class CocoaToolheadControl:
 
         self.printer.register_event_handler("klippy:connect", self._on_connect)
         self.printer.register_event_handler(
-            "probe:calibrated", self._probe_calibrated
-        )
-        self.printer.register_event_handler(
             f"cocoa_memory:{self.name}:ready", self._memory_ready
         )
         self.printer.register_event_handler(
@@ -90,6 +87,10 @@ class CocoaToolheadControl:
             f"cocoa_preheater:{self.name}:stop", self._preheater_stopped
         )
         self.gcode: GCodeDispatch = self.printer.lookup_object("gcode")
+        self.gcode_move: GCodeMove = self.printer.lookup_object("gcode_move")
+        self.save_variables: SaveVariables = self.printer.load_object(
+            config, "save_variables"
+        )
 
         # register commands
         self.gcode.register_mux_command(
@@ -97,6 +98,12 @@ class CocoaToolheadControl:
             "TOOL",
             self.mux_name,
             self.cmd_SET_COCOA_TOOLHEAD,
+        )
+        self.gcode.register_mux_command(
+            "SET_NOZZLE_OFFSET",
+            "TOOL",
+            self.mux_name,
+            self.cmd_SET_NOZZLE_OFFSET,
         )
 
         gcode_macro: PrinterGCodeMacro = self.printer.load_object(
@@ -123,27 +130,11 @@ class CocoaToolheadControl:
         self.inject_temp_callback("extruder", extruder.heater)
         self.inject_temp_callback("body", body_heater)
 
-    # TODO: Probe offsets are gonna get weirder for idex
-    def _probe_calibrated(self, probe_name, z_offset):
-        if not self.memory.connected:
-            return
-
-        sv: SaveVariables = self.printer.lookup_object("save_variables")
-        sv.save(f"z_offset_{self.memory.header.uid}", round(z_offset, 4))
-
     def _memory_ready(self, connected: bool, config: dict):
-        sv: SaveVariables = self.printer.lookup_object("save_variables")
-        probe: PrinterProbe = self.printer.lookup_object("probe")
-
-        key = (
-            f"z_offset_{self.memory.header.uid}"
-            if connected
-            else "z_offset_generic"
-        )
-        if key in sv.allVariables:
-            saved_z_offset = sv.allVariables[key]
-            z_offset = saved_z_offset - probe.z_offset
-            self.gcode.run_script_from_command(f"SET_GCODE_OFFSET Z={z_offset}")
+        uid = self.memory.header.uid if connected else "generic"
+        key = f"z_offset_{uid}"
+        z_offset = self.save_variables.allVariables.get(key, "0")
+        self.gcode.run_script_from_command(f"SET_GCODE_OFFSET Z={z_offset}")
 
     def _preheater_started(self, profile):
         if not (self.memory.connected):
@@ -230,6 +221,11 @@ class CocoaToolheadControl:
             "calibration_required": self.calibration_required,
             "runout": self.runout.get_status(eventtime),
             "memory": self.memory.get_status(eventtime),
+            "z_offset": {
+                k.removeprefix("z_offset_"): v
+                for k, v in self.save_variables.allVariables.items()
+                if k.startswith("z_offset_")
+            },
         }
 
     # For updating user values (name of the toolhead)
@@ -248,3 +244,12 @@ class CocoaToolheadControl:
         if new_name is not None:
             self.memory.set("name", new_name)
             gcmd.respond_info(f"{self.name}: Set name to {new_name}")
+
+    def cmd_SET_NOZZLE_OFFSET(self, cmd: GCodeCommand):
+        uid = cmd.get("UID", "generic")
+        offset = cmd.get_float("OFFSET", self.gcode_move.homing_position[2])
+
+        if uid == "current":
+            uid = self.memory.header.uid
+
+        self.save_variables.save(f"z_offset_{uid}", round(offset, 4))

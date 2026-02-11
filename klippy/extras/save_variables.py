@@ -4,9 +4,12 @@
 # Copyright (C) 2016-2020  Kevin O'Connor <kevin@koconnor.net>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
+from __future__ import annotations
+
 import ast
 import configparser
 import logging
+import typing
 import os
 from ..gcode import CommandError
 
@@ -15,7 +18,7 @@ class SaveVariables:
     def __init__(self, config):
         self.printer = config.get_printer()
         self.filename = os.path.expanduser(config.get("filename"))
-        self.allVariables = {}
+        self.allVariables: dict[str, typing.Any] = {}
         try:
             if not os.path.exists(self.filename):
                 open(self.filename, "w").close()
