@@ -492,37 +492,37 @@ class PrinterRail:
 
         self.homing_accel = config.getfloat("homing_accel", None, above=0.0)
 
-        self.sample_count = config.getint("samples", 1, minval=1)
-        self.sample_retract_dist = config.getfloat(
-            "sample_retract_dist",
+        self.homing_sample_count = config.getint("homing_samples", 1, minval=1)
+        self.homing_sample_retract_dist = config.getfloat(
+            "homing_sample_retract_dist",
             self.min_home_dist
             + get_danger_options().homing_elapsed_distance_tolerance,
             above=self.min_home_dist,
         )
-        self.sample_retract_speed = config.getfloat(
-            "sample_retract_speed", self.homing_retract_speed, above=0.0
+        self.homing_sample_retract_speed = config.getfloat(
+            "homing_sample_retract_speed", self.homing_retract_speed, above=0.0
         )
         atypes = ["median", "average"]
-        self.samples_result = config.getchoice(
-            "samples_result", atypes, "average"
+        self.homing_samples_result = config.getchoice(
+            "homing_samples_result", atypes, "average"
         )
-        self.samples_tolerance = config.getfloat(
-            "samples_tolerance", 0.100, minval=0.0
+        self.homing_samples_tolerance = config.getfloat(
+            "homing_samples_tolerance", 0.100, minval=0.0
         )
-        self.samples_retries = config.getint(
-            "samples_tolerance_retries", 0, minval=0
+        self.homing_samples_retries = config.getint(
+            "homing_samples_tolerance_retries", 0, minval=0
         )
         self.drop_first_result = config.getboolean("drop_first_result", False)
         self.move_toolhead_after_adjusting = config.getboolean(
             "move_toolhead_after_adjusting", False
         )
-        self.retry_gcode = None
-        if config.get("retry_gcode", None) is not None:
+        self.homing_retry_gcode = None
+        if config.get("homing_retry_gcode", None) is not None:
             gcode_macro = config.get_printer().load_object(
                 config, "gcode_macro"
             )
-            self.retry_gcode = gcode_macro.load_template(
-                config, "retry_gcode", ""
+            self.homing_retry_gcode = gcode_macro.load_template(
+                config, "homing_retry_gcode", ""
             )
 
         if self.homing_positive_dir is None:
@@ -592,15 +592,15 @@ class PrinterRail:
             self.use_sensorless_homing,
             self.min_home_dist,
             self.homing_accel,
-            self.sample_count,
-            self.sample_retract_dist,
-            self.sample_retract_speed,
-            self.samples_result,
-            self.samples_tolerance,
-            self.samples_retries,
+            self.homing_sample_count,
+            self.homing_sample_retract_dist,
+            self.homing_sample_retract_speed,
+            self.homing_samples_result,
+            self.homing_samples_tolerance,
+            self.homing_samples_retries,
             self.drop_first_result,
             self.move_toolhead_after_adjusting,
-            self.retry_gcode,
+            self.homing_retry_gcode,
         )
         return homing_info
 
