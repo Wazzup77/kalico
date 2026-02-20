@@ -520,6 +520,7 @@ class Homing:
         }
 
         # Process samples if we have any
+        # No samples are illegal cause that would mean we never home at all, so we check for greater than 1
         if len(distances) > 1:
             self.toolhead.wait_moves()
             pos = self.toolhead.get_position()
@@ -580,7 +581,6 @@ class Homing:
         gcode.run_script_from_command("M400")
 
         if retries and hi.retry_gcode is not None:
-            gcode.respond_info("Executing retry_gcode")
             hi.retry_gcode.run_gcode_from_command()
 
     def process_homing(self, distances, homing_axes):

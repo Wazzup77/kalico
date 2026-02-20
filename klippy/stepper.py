@@ -512,9 +512,9 @@ class PrinterRail:
         self.homing_samples_retries = config.getint(
             "homing_samples_tolerance_retries", 0, minval=0
         )
-        self.drop_first_result = config.getboolean("drop_first_result", False)
-        self.move_toolhead_after_adjusting = config.getboolean(
-            "move_toolhead_after_adjusting", False
+        self.homing_drop_first_result = config.getboolean("homing_drop_first_result", False)
+        self.homing_move_toolhead_after_adjusting = config.getboolean(
+            "homing_move_toolhead_after_adjusting", False
         )
         self.homing_retry_gcode = None
         if config.get("homing_retry_gcode", None) is not None:
@@ -598,8 +598,8 @@ class PrinterRail:
             self.homing_samples_result,
             self.homing_samples_tolerance,
             self.homing_samples_retries,
-            self.drop_first_result,
-            self.move_toolhead_after_adjusting,
+            self.homing_drop_first_result,
+            self.homing_move_toolhead_after_adjusting,
             self.homing_retry_gcode,
         )
         return homing_info
