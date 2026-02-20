@@ -346,13 +346,13 @@ position_max:
 #homing_samples_result: average
 #homing_samples_tolerance: 0.100
 #homing_samples_tolerance_retries: 0
-#drop_first_result: False
+#homing_drop_first_result: False
 #   See the "probe" section for a description of the above parameters
 #   If the second homing is enabled, the first homing move will only be once and the
 #   second homing move will use samples.
 #homing_sample_retract_speed: 
 #   Equals probes lift_speed, defaults to retract_speed
-#move_toolhead_after_adjusting: False
+#homing_move_toolhead_after_adjusting: False
 #   Move the toolhead to the configured homing position after adjusting the coordinate
 #   system according to the samples.
 #homing_retry_gcode:
