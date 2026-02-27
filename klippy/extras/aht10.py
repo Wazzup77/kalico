@@ -33,27 +33,21 @@ MAX_BUSY_CYCLES = 5
 
 class AHTBase:
     model = None
+    read_count = 6 # 6 bytes for AHTxx, 7 bytes for AHT20_F (CRC8 check)
 
     def __init__(self, config):
         self.printer = config.get_printer()
         self.name = config.get_name().split()[-1]
         self.reactor = self.printer.get_reactor()
-        self.i2c = bus.MCU_I2C_from_config(
-            config, default_addr=I2C_ADDR, default_speed=100000
-        )
+        self.i2c = bus.MCU_I2C_from_config(config, default_addr=I2C_ADDR, default_speed=100000)
         self.mcu = self.i2c.get_mcu()
         self.report_time = config.getint("aht10_report_time", 30, minval=5)
         self.temp = self.min_temp = self.max_temp = self.humidity = 0.0
         self.sample_timer = self.reactor.register_timer(self._sample_aht)
 
         self.printer.add_object("aht10 " + self.name, self)
-        self.printer.register_event_handler(
-            "klippy:connect", self.handle_connect
-        )
-        self.printer.register_event_handler(
-            self.mcu.get_non_critical_reconnect_event_name(),
-            self.handle_connect,
-        )
+        self.printer.register_event_handler("klippy:connect", self.handle_connect)
+        self.printer.register_event_handler(self.mcu.get_non_critical_reconnect_event_name(), self.handle_connect)
         self.is_calibrated = False
         self.init_sent = False
         self._callback = None
@@ -65,6 +59,9 @@ class AHTBase:
     def _send_init(self):
         raise NotImplementedError("Subclass must implement _send_init")
 
+    def _check_crc8(self, data, length):
+        raise NotImplementedError("Subclass must implement _check_crc8")
+
     def _init_sensor(self):
         self._send_init()
 
@@ -72,15 +69,11 @@ class AHTBase:
 
         if self._make_measurement():
             if not self.is_calibrated:
-                logging.warning(
-                    "%s %s: not calibrated, possible OTP fault"
-                    % (self.model, self.name)
-                )
-            logging.info(
-                "%s %s: successfully initialized, "
+                logging.warning("%s %s: not calibrated, possible OTP fault"
+                    % (self.model, self.name))
+            logging.info("%s %s: successfully initialized, "
                 "initial temp: %.3f, humidity: %.3f"
-                % (self.model, self.name, self.temp, self.humidity)
-            )
+                % (self.model, self.name, self.temp, self.humidity))
 
     def _soft_reset(self):
         logging.info("%s %s: performing soft reset" % (self.model, self.name))
@@ -119,8 +112,8 @@ class AHTBase:
                 # Wait after first read, 75ms minimum (max depends on sensor)
                 self._first_read_wait()
 
-                # Read 6 bytes of data
-                read = self.i2c.i2c_read([], 6)
+                # Read self.read_count bytes of data
+                read = self.i2c.i2c_read([], self.read_count)
                 if read is None:
                     logging.warning(
                         "%s %s: received data from i2c_read is None"
@@ -129,15 +122,27 @@ class AHTBase:
                     continue
 
                 data = bytearray(read["response"])
-                if len(data) < 6:
+                if len(data) < self.read_count:
                     logging.warning(
                         "%s %s: received bytes less than expected:"
-                        " got %d, need 6" % (self.model, self.name, len(data))
+                        " got %d, need %d" % (self.model, self.name, len(data), self.read_count)
                     )
                     continue
 
                 self.is_calibrated = bool(data[0] & STATUS_CALIBRATED)
                 is_busy = bool(data[0] & STATUS_BUSY)
+
+                if self.read_count == 7: # aht20_f case - 6 bytes + 1 byte CRC8
+                    if ((data[0] & STATUS_BUSY) == 0) and (
+                        data[6] == self._check_crc8(data[:6], 6)
+                    ):
+                        is_busy = False
+                        self.is_calibrated = bool(data[0] & STATUS_CALIBRATED)
+                    else:
+                        is_busy = True
+                else:
+                    self.is_calibrated = bool(data[0] & STATUS_CALIBRATED)
+                    is_busy = bool(data[0] & STATUS_BUSY)
 
             if is_busy:
                 return False
@@ -146,6 +151,7 @@ class AHTBase:
                 "%s %s: exception encountered reading data: %s"
                 % (self.model, self.name, str(e))
             )
+            self._soft_reset() # reset in case of i2c hangup
             return False
 
         # Parse temperature: 20 bits starting at data[3] (low nibble)
@@ -240,6 +246,45 @@ class AHT20_F(AHTBase):
 
     def _first_read_wait(self):
         self.reactor.pause(self.reactor.monotonic() + 0.600)
+        
+    def _check_crc8(self, data, length):
+        crc = 0xFF
+        for i in range(length):
+            crc ^= data[i]
+            for j in range(8):
+                if crc & 0x80:
+                    crc = (crc << 1) ^ 0x31
+                else:
+                    crc <<= 1
+                crc &= 0xFF
+        return crc
+
+    def _soft_reset(self):
+        logging.info("%s %s: performing full OTP reset" % (self.model, self.name))
+
+        self.i2c.i2c_write(CMD_RESET)
+        self.reactor.pause(self.reactor.monotonic() + 0.100)
+
+        self.i2c.i2c_write([0x1C])  # OTP_CCP
+        self.reactor.pause(self.reactor.monotonic() + 0.100)
+        read = self.i2c.i2c_read([], 3)
+        if read:
+            data = bytearray(read["response"])
+            if len(data) >= 3:
+                self.i2c.i2c_write([0xBC, data[1], data[2]])
+                self.reactor.pause(self.reactor.monotonic() + 0.100)
+
+        self.i2c.i2c_write([0x1B])  # OTP_AFE
+        self.reactor.pause(self.reactor.monotonic() + 0.100)
+        read = self.i2c.i2c_read([], 3)
+        if read:
+            data = bytearray(read["response"])
+            if len(data) >= 3:
+                self.i2c.i2c_write([0xBB, data[1], data[2]])
+                self.reactor.pause(self.reactor.monotonic() + 0.100)
+
+        self.i2c.i2c_write([0xBE, 0x08, 0x00])  # SYS_CFG
+        self.reactor.pause(self.reactor.monotonic() + 0.100)
 
 def load_config(config):
     # Register sensor
